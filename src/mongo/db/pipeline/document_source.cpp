@@ -23,30 +23,34 @@ namespace mongo {
     }
 
     void DocumentSource::setSource(
-	const intrusive_ptr<DocumentSource> &pTheSource) {
-	assert(!pSource.get());
-	pSource = pTheSource;
+        const intrusive_ptr<DocumentSource> &pTheSource) {
+        assert(!pSource.get());
+        pSource = pTheSource;
     }
 
     bool DocumentSource::coalesce(
-	const intrusive_ptr<DocumentSource> &pNextSource) {
-	return false;
+        const intrusive_ptr<DocumentSource> &pNextSource) {
+        return false;
     }
 
     void DocumentSource::optimize() {
     }
 
+    void DocumentSource::manageDependencies(
+        const intrusive_ptr<DependencyTracker> &pTracker) {
+    }
+
     void DocumentSource::addToBsonArray(BSONArrayBuilder *pBuilder) const {
-	BSONObjBuilder insides;
-	sourceToBson(&insides);
-	pBuilder->append(insides.done());
+        BSONObjBuilder insides;
+        sourceToBson(&insides);
+        pBuilder->append(insides.done());
     }
 
     void DocumentSource::writeString(stringstream &ss) const {
-	BSONArrayBuilder bab;
-	addToBsonArray(&bab);
-	BSONArray ba(bab.arr());
-	ss << ba.toString(/* isArray */true); 
+        BSONArrayBuilder bab;
+        addToBsonArray(&bab);
+        BSONArray ba(bab.arr());
+        ss << ba.toString(/* isArray */true); 
             // our toString should use standard string types.....
     }
 }

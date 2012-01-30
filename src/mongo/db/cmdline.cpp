@@ -256,6 +256,14 @@ namespace mongo {
             cmdLine.objcheck = true;
         }
 
+        if (params.count("bind_ip")) {
+            // passing in wildcard is the same as default behavior; remove and warn
+            if ( cmdLine.bind_ip ==  "0.0.0.0" ) {
+                cout << "warning: bind_ip of 0.0.0.0 is unnecessary; listens on all ips by default" << endl;
+                cmdLine.bind_ip = "";
+            }
+        }
+
         string logpath;
 
 #ifndef _WIN32
@@ -362,7 +370,7 @@ namespace mongo {
         }
         
         if (params.count("syslog")) {
-            StringBuilder sb(128);
+            StringBuilder sb;
             sb << cmdLine.binaryName << "." << cmdLine.port;
             Logstream::useSyslog( sb.str().c_str() );
         }
@@ -415,8 +423,7 @@ namespace mongo {
             cmdLine.sslServerManager = new SSLManager( false );
             cmdLine.sslServerManager->setupPEM( cmdLine.sslPEMKeyFile , cmdLine.sslPEMKeyPassword );
         }
-
-        if ( cmdLine.sslPEMKeyFile.size() || cmdLine.sslPEMKeyPassword.size() ) {
+        else if ( cmdLine.sslPEMKeyFile.size() || cmdLine.sslPEMKeyPassword.size() ) {
             log() << "need to enable sslOnNormalPorts" << endl;
             dbexit(EXIT_BADOPTIONS);
         }
@@ -497,7 +504,7 @@ namespace mongo {
     } cmdGetCmdLineOpts;
 
     string prettyHostName() {
-        StringBuilder s(128);
+        StringBuilder s;
         s << getHostNameCached();
         if( cmdLine.port != CmdLine::DefaultDBPort )
             s << ':' << mongo::cmdLine.port;

@@ -338,7 +338,6 @@ namespace mongo {
      * to other hosts
      */
     class QuerySpec {
-    public:
 
         string _ns;
         int _ntoskip;
@@ -348,58 +347,44 @@ namespace mongo {
         BSONObj _fields;
         Query _queryObj;
 
+    public:
+        
         QuerySpec( const string& ns,
                    const BSONObj& query, const BSONObj& fields,
                    int ntoskip, int ntoreturn, int options )
             : _ns( ns ), _ntoskip( ntoskip ), _ntoreturn( ntoreturn ), _options( options ),
-              _query( query ), _fields( fields )
-        {
-            _query = _query.getOwned();
-            _fields = _fields.getOwned();
-            _queryObj = Query( _query );
+              _query( query.getOwned() ), _fields( fields.getOwned() ) , _queryObj( _query ) {
         }
 
         QuerySpec() {}
 
-        bool isEmpty() const {
-            return _ns.size() == 0;
-        }
+        bool isEmpty() const { return _ns.size() == 0; }
 
-        bool isExplain() const {
-            return _queryObj.isExplain();
-        }
+        bool isExplain() const { return _queryObj.isExplain(); }
+        BSONObj filter() const { return _queryObj.getFilter(); }
 
-        BSONObj filter() const {
-            return _queryObj.getFilter();
-        }
-
-        BSONObj hint() const {
-            return _queryObj.getHint();
-        }
-
-        BSONObj sort() const {
-            return _queryObj.getSort();
-        }
-
-        BSONObj query(){
-            return _query;
-        }
-
+        BSONObj hint() const { return _queryObj.getHint(); }
+        BSONObj sort() const { return _queryObj.getSort(); }
+        BSONObj query() const { return _query; }
         BSONObj fields() const { return _fields; }
+        BSONObj* fieldsData() { return &_fields; }
+
+        // don't love this, but needed downstrem
+        const BSONObj* fieldsPtr() const { return &_fields; } 
 
         string ns() const { return _ns; }
-
         int ntoskip() const { return _ntoskip; }
-
         int ntoreturn() const { return _ntoreturn; }
-
         int options() const { return _options; }
+        
+        void setFields( BSONObj& o ) { _fields = o.getOwned(); }
 
         string toString() const {
-            return str::stream() << "QSpec " << BSON( "ns" << _ns << "n2skip" << _ntoskip << "n2return" << _ntoreturn << "options" << _options
-                                                           << "query" << _query << "fields" << _fields );
+            return str::stream() << "QSpec " << 
+                BSON( "ns" << _ns << "n2skip" << _ntoskip << "n2return" << _ntoreturn << "options" << _options
+                      << "query" << _query << "fields" << _fields );
         }
-
+        
     };
 
 
@@ -423,7 +408,7 @@ namespace mongo {
         virtual ~DBConnector() {}
         /** actualServer is set to the actual server where they call went if there was a choice (SlaveOk) */
         virtual bool call( Message &toSend, Message &response, bool assertOk=true , string * actualServer = 0 ) = 0;
-        virtual void say( Message &toSend, bool isRetry = false ) = 0;
+        virtual void say( Message &toSend, bool isRetry = false , string * actualServer = 0 ) = 0;
         virtual void sayPiggyBack( Message &toSend ) = 0;
         /* used by QueryOption_Exhaust.  To use that your subclass must implement this. */
         virtual bool recv( Message& m ) { assert(false); return false; }
@@ -943,7 +928,7 @@ namespace mongo {
                 throw ConnectException(string("can't connect ") + errmsg);
         }
 
-        virtual bool auth(const string &dbname, const string &username, const string &pwd, string& errmsg, bool digestPassword = true);
+        virtual bool auth(const string &dbname, const string &username, const string &pwd, string& errmsg, bool digestPassword = true, Auth::Level* level=NULL);
 
         virtual auto_ptr<DBClientCursor> query(const string &ns, Query query=Query(), int nToReturn = 0, int nToSkip = 0,
                                                const BSONObj *fieldsToReturn = 0, int queryOptions = 0 , int batchSize = 0 ) {
@@ -984,7 +969,7 @@ namespace mongo {
 
         virtual void killCursor( long long cursorID );
         virtual bool callRead( Message& toSend , Message& response ) { return call( toSend , response ); }
-        virtual void say( Message &toSend, bool isRetry = false );
+        virtual void say( Message &toSend, bool isRetry = false , string * actualServer = 0 );
         virtual bool recv( Message& m );
         virtual void checkResponse( const char *data, int nReturned, bool* retry = NULL, string* host = NULL );
         virtual bool call( Message &toSend, Message &response, bool assertOk = true , string * actualServer = 0 );

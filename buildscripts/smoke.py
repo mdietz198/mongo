@@ -33,8 +33,6 @@
 #   off all mongods on a box, which means you can't run two smoke.py
 #   jobs on the same host at once.  So something's gotta change.
 
-from __future__ import with_statement
-
 import glob
 from optparse import OptionParser
 import os
@@ -164,7 +162,7 @@ class mongod(object):
         utils.ensureDir(dir_name)
         argv = [mongod_executable, "--port", str(self.port), "--dbpath", dir_name]
         if self.kwargs.get('small_oplog'):
-            argv += ["--master", "--oplogSize", "256"]
+            argv += ["--master", "--oplogSize", "511"]
         if self.slave:
             argv += ['--slave', '--source', 'localhost:' + str(srcport)]
         if self.kwargs.get('no_journal'):
@@ -265,6 +263,11 @@ def check_db_hashes(master, slave):
             lost_in_master.append(db)
 
 
+def ternary( b , l="true", r="false" ):
+    if b:
+        return l
+    return r
+
 
 # Blech.
 def skipTest(path):
@@ -311,6 +314,8 @@ def runTest(test):
         f = open(keyFile, 'r')
         keyFileData = re.sub(r'\s', '', f.read()) # Remove all whitespace
         f.close()
+    else:
+        keyFileData = None
 
     sys.stderr.write( "starting test : %s \n" % os.path.basename(path) )
     sys.stderr.flush()
@@ -323,11 +328,11 @@ def runTest(test):
                      'TestData.testPath = "' + path + '";' + \
                      'TestData.testFile = "' + os.path.basename( path ) + '";' + \
                      'TestData.testName = "' + re.sub( ".js$", "", os.path.basename( path ) ) + '";' + \
-                     'TestData.noJournal = ' + ( 'true' if no_journal else 'false' )  + ";" + \
-                     'TestData.noJournalPrealloc = ' + ( 'true' if no_preallocj else 'false' )  + ";" + \
-                     'TestData.auth = ' + ( 'true' if auth else 'false' ) + ";" + \
-                     'TestData.keyFile = ' + ( '"' + keyFile + '"' if keyFile else 'null' ) + ";" + \
-                     'TestData.keyFileData = ' + ( '"' + keyFileData + '"' if keyFile else 'null' ) + ";"
+                     'TestData.noJournal = ' + ternary( no_journal )  + ";" + \
+                     'TestData.noJournalPrealloc = ' + ternary( no_preallocj )  + ";" + \
+                     'TestData.auth = ' + ternary( auth ) + ";" + \
+                     'TestData.keyFile = ' + ternary( keyFile , '"' + str(keyFile) + '"' , 'null' ) + ";" + \
+                     'TestData.keyFileData = ' + ternary( keyFile , '"' + str(keyFileData) + '"' , 'null' ) + ";"
         if auth and usedb:
             evalString += 'db.getSiblingDB("admin").addUser("admin","password");'
             evalString += 'jsTest.authenticate(db.getMongo());'
@@ -359,10 +364,16 @@ def run_tests(tests):
     # dbpath, etc., and so long as we shut ours down properly,
     # starting this mongod shouldn't break anything, though.)
     
-    # The reason we use with is so that we get __exit__ semantics
+    # The reason we want to use "with" is so that we get __exit__ semantics
+    # but "with" is only supported on Python 2.5+
 
-    with mongod(small_oplog=small_oplog,no_journal=no_journal,no_preallocj=no_preallocj,auth=auth) as master:
-        with mongod(slave=True) if small_oplog else Nothing() as slave:
+    master = mongod(small_oplog=small_oplog,no_journal=no_journal,no_preallocj=no_preallocj,auth=auth).__enter__()
+    try:
+        if small_oplog:
+            slave = mongod(slave=True).__enter__()
+        else:
+            slave = Nothing()
+        try:
             if small_oplog:
                 master.wait_for_repl()
 
@@ -388,12 +399,15 @@ def run_tests(tests):
                             return 1
             if isinstance(slave, mongod):
                 check_db_hashes(master, slave)
-
+        finally:
+            slave.__exit__(None, None, None)
+    finally:
+        master.__exit__(None, None, None)
     return 0
 
 
 def report():
-    print "%d test%s succeeded" % (len(winners), '' if len(winners) == 1 else 's')
+    print "%d tests succeeded" % len(winners)
     num_missed = len(tests) - (len(winners) + len(losers.keys()))
     if num_missed:
         print "%d tests didn't get run" % num_missed
@@ -468,12 +482,18 @@ def expand_suites(suites):
                                   "dur": ("dur/*.js", False),
                                   "auth": ("auth/*.js", False),
                                   "sharding": ("sharding/*.js", False),
-                                  "tool": ("tool/*.js", False)}[suite]
+                                  "tool": ("tool/*.js", False),
+                                  "aggregation": ("aggregation/test[ab]*.js", True),
+                                 }[suite]
             except KeyError:
                 raise Exception('unknown test suite %s' % suite)
 
         if globstr:
-            globstr = os.path.join(mongo_repo, (os.path.join(('jstests/' if globstr.endswith('.js') else ''), globstr)))
+            if globstr.endswith('.js'):
+                loc = 'jstests/'
+            else:
+                loc = ''
+            globstr = os.path.join(mongo_repo, (os.path.join(loc, globstr)))
             paths = glob.glob(globstr)
             paths.sort()
             tests += [(path, usedb) for path in paths]
@@ -516,8 +536,8 @@ def run_old_fails():
     global tests
 
     try:
-        with open(failfile, 'r') as f:
-            testsAndOptions = pickle.load(f)
+        f = open(failfile, 'r')
+        testsAndOptions = pickle.load(f)
     except Exception:
         clear_failfile()
         return # This counts as passing so we will run all tests
@@ -536,8 +556,8 @@ def run_old_fails():
             testsAndOptions.pop(i - offset)
 
         if testsAndOptions:
-            with open(failfile, 'w') as f:
-                pickle.dump(testsAndOptions, f)
+            f = open(failfile, 'w')
+            pickle.dump(testsAndOptions, f)
         else:
             clear_failfile()
 
@@ -545,8 +565,8 @@ def run_old_fails():
 
 def add_to_failfile(tests, options):
     try:
-        with open(failfile, 'r') as f:
-            testsAndOptions = pickle.load(f)
+        f = open(failfile, 'r')
+        testsAndOptions = pickle.load(f)
     except Exception:
         testsAndOptions = []
 
@@ -554,8 +574,8 @@ def add_to_failfile(tests, options):
         if (test, options) not in testsAndOptions:
             testsAndOptions.append( (test, options) )
 
-    with open(failfile, 'w') as f:
-        pickle.dump(testsAndOptions, f)
+    f = open(failfile, 'w')
+    pickle.dump(testsAndOptions, f)
 
 
 
@@ -617,8 +637,8 @@ def main():
         if options.File == '-':
             tests = sys.stdin.readlines()
         else:
-            with open(options.File) as f:
-                tests = f.readlines()
+            f = open(options.File)
+            tests = f.readlines()
     tests = [t.rstrip('\n') for t in tests]
 
     if options.only_old_fails:

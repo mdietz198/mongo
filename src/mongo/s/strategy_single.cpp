@@ -192,7 +192,7 @@ namespace mongo {
                 for ( unsigned i=0; i<shards.size(); i++ ) {
                     Shard shard = shards[i];
                     ScopedDbConnection conn( shard );
-                    BSONObj temp = conn->findOne( r.getns() , BSONObj() );
+                    BSONObj temp = conn->findOne( r.getns() , q.query );
                     if ( temp["inprog"].isABSONObj() ) {
                         BSONObjIterator i( temp["inprog"].Obj() );
                         while ( i.more() ) {
@@ -222,11 +222,10 @@ namespace mongo {
                 arr.done();
             }
             else if ( strcmp( ns , "killop" ) == 0 ) {
+                r.checkAuth( Auth::WRITE , "admin" );
+                
                 BSONElement e = q.query["op"];
-                if ( strstr( r.getns() , "admin." ) == 0 ) {
-                    b.append( "err" , "unauthorized" );
-                }
-                else if ( e.type() != String ) {
+                if ( e.type() != String ) {
                     b.append( "err" , "bad op" );
                     b.append( e );
                 }

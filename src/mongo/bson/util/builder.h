@@ -200,11 +200,9 @@ namespace mongo {
     private:
         /* "slow" portion of 'grow()'  */
         void NOINLINE_DECL grow_reallocate() {
-            int a = size * 2;
-            if ( a == 0 )
-                a = 512;
-            if ( l > a )
-                a = l + 16 * 1024;
+            int a = 64;
+            while( a < l ) 
+                a = a * 2;
             if ( a > BufferMaxSize ) {
                 std::stringstream ss;
                 ss << "BufBuilder attempted to grow() to " << a << " bytes, past the 64MB limit.";
@@ -254,9 +252,7 @@ namespace mongo {
         static const size_t MONGO_U64_SIZE = 22;
         static const size_t MONGO_S16_SIZE = 7;
 
-        StringBuilder( int initsize=256 )
-            : _buf( initsize ) {
-        }
+        StringBuilder() { }
 
         StringBuilder& operator<<( double x ) {
             return SBNUM( x , MONGO_DBL_SIZE , "%g" );
@@ -316,7 +312,7 @@ namespace mongo {
         int len() const { return _buf.l; }
 
     private:
-        BufBuilder _buf;
+        StackBufBuilder _buf;
 
         // non-copyable, non-assignable
         StringBuilder( const StringBuilder& );
